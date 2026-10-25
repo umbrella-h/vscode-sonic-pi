@@ -86,7 +86,7 @@ export class Main {
 			this.rubyPath = this.rootPath + '/app/server/native/ruby/bin/ruby.exe'
 		} else if (this.platform === 'darwin') {
 			this.rootPath = '/Applications/Sonic Pi.app/Contents/Resources'
-			this.rubyPath = '/usr/bin/ruby' // was this.rootPath + '/app/server/native/ruby/bin/ruby'
+			this.rubyPath = this.rootPath + '/app/server/native/ruby/bin/ruby'
 		} else {
 			this.rootPath = '/home/user/sonic-pi'
 			this.rubyPath = 'ruby'
@@ -110,6 +110,8 @@ export class Main {
 		this.daemonLauncherPath = this.rootPath + '/server/ruby/bin/daemon.rb'
 
 		if (this.platform === 'win32') {
+			this.daemonLauncherPath = this.rootPath + '/app/server/ruby/bin/daemon.rb'
+		} else if (this.platform === 'darwin') {
 			this.daemonLauncherPath = this.rootPath + '/app/server/ruby/bin/daemon.rb'
 		}
 
@@ -479,21 +481,27 @@ export class Main {
 
 		return new Promise<void>((resolve, reject) => {
 			let ruby_server = child_process.spawn(this.rubyPath, args)
+			let output = ''
 			ruby_server.stdout.on('data', (data: any) => {
 				// console.log(`stdout: ${data}`)
 				this.logOutput.appendLine(`Daemon Out: ${data}`)
-				// Start the keepalive loop
-				let ports = data.toString().split(' ')
+				output += data.toString()
+				if (!output.includes('\n')) {
+					return
+				}
 
-				// Order: daemon-keep-alive gui-listen-to-server gui-send-to-server scsynth osc-cues tau-api tau-phx token
-
+				let ports = output.trim().split(/\s+/)
 				this.daemonPort = parseInt(ports[0])
 				this.guiListenToServerPort = parseInt(ports[1])
 				this.serverSendToGuiPort = parseInt(ports[2])
-				this.guiUuid = parseInt(ports[7])
-				this.portsInitalizedResolver(new OscSender(this.serverSendToGuiPort))
+				this.guiUuid = parseInt(ports[5])
+				if (![this.daemonPort, this.guiListenToServerPort, this.serverSendToGuiPort, this.guiUuid].every(Number.isFinite)) {
+					reject(new Error('Sonic Pi server returned invalid connection details.'))
+					return
+				}
 
-				resolve() // Assume stuff is ok instantly....
+				this.portsInitalizedResolver(new OscSender(this.serverSendToGuiPort))
+				resolve()
 
 				//if (data.toString().match(/.*Sonic Pi Server successfully booted.*/)) { // TODO: Fix mixer setting stuff
 				//	this.updateMixerSettings()
